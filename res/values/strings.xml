@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name">FunnyFactsReader</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="json_url">https://dl.dropboxusercontent.com/u/746330/facts.json</string>
+    <string name="funny_facts_item_image">Funny Facts Item Image</string>
+    <string name="no_data">Failed to load data!</string>
+    <string name="no_server">Server not found!</string>
+
+</resources>

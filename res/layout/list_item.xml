@@ -1,0 +1,38 @@
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/news_item"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent"
+	android:padding="@dimen/list_item_padding" >
+
+    <TextView android:id="@+id/funny_facts_item_title"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:layout_margin="@dimen/list_item_margin"         
+        android:ellipsize="end"
+        android:gravity="left"
+        android:singleLine="true"
+        android:textAppearance="@style/funny_facts_item_title_text" />
+
+    <ImageView android:id="@+id/funny_facts_item_image"
+        android:layout_width="@dimen/list_item_image_size"
+        android:layout_height="@dimen/list_item_image_size"
+        android:layout_alignParentRight="true"
+        android:layout_below="@id/funny_facts_item_title"
+        android:layout_margin="@dimen/list_item_margin"
+        android:scaleType="fitStart"
+        android:contentDescription="@string/funny_facts_item_image" />
+
+    <TextView android:id="@+id/funny_facts_item_description"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentLeft="true"
+        android:layout_below="@id/funny_facts_item_title"
+        android:layout_toLeftOf="@id/funny_facts_item_image"
+        android:layout_margin="@dimen/list_item_margin"
+        android:ellipsize="end"
+        android:gravity="left"
+        android:singleLine="false"
+        android:textAppearance="@style/funny_facts_item_description_text" />
+    
+</RelativeLayout>
