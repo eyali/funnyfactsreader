@@ -7,5 +7,6 @@
     <string name="funny_facts_item_image">Funny Facts Item Image</string>
     <string name="no_data">Failed to load data!</string>
     <string name="no_server">Server not found!</string>
+    <string name="no_connection">No network connection</string>
 
 </resources>

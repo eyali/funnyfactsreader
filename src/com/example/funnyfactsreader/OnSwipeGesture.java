@@ -16,6 +16,7 @@ public interface OnSwipeGesture {
      * onSwipe - called when the passed View was swiped
      * 
      * @param swipedView
+     *            - the swiped view
      */
     void onSwipe(View swipedView);
 

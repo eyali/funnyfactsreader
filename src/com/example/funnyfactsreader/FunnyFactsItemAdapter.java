@@ -1,18 +1,21 @@
 package com.example.funnyfactsreader;
 
 import java.io.InputStream;
+import java.net.UnknownHostException;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
 import org.apache.http.client.methods.HttpGet;
+import org.apache.http.conn.ConnectTimeoutException;
 import org.apache.http.params.HttpConnectionParams;
 import org.apache.http.params.HttpParams;
 
 import android.content.Context;
 import android.graphics.BitmapFactory;
 import android.net.http.AndroidHttpClient;
+import android.util.Log;
 import android.util.Pair;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -34,7 +37,8 @@ public class FunnyFactsItemAdapter extends ArrayAdapter<FunnyFactsItem> {
     protected static final String TAG = "FunnyFactsItemAdapter";
     protected static final int CONNECTION_TIMEOUT = 10000; // 10 seconds
     protected MainActivity m_activity = null;
-    private ConcurrentLinkedQueue<Pair<ImageView, FunnyFactsItem>> m_downloads = null;
+    private ConcurrentLinkedQueue<Pair<ImageView, FunnyFactsItem>> m_downloads = new ConcurrentLinkedQueue<Pair<ImageView, FunnyFactsItem>>();
+    private boolean m_enabled = false;
     private Thread m_downloadThread = null;
     public HttpGet m_getRequest = null;
 
@@ -113,10 +117,9 @@ public class FunnyFactsItemAdapter extends ArrayAdapter<FunnyFactsItem> {
     }
 
     /**
-     * refreshImage - clear and reload the image into the ImageView of the given
-     * ListView item view
+     * refreshImage - clear and reload the image into the ImageView of the given ListView item view
      * 
-     * @param swipedView
+     * @param itemView
      *            - the containing ListView item view
      */
     protected void refreshImage(View itemView) {
@@ -133,8 +136,7 @@ public class FunnyFactsItemAdapter extends ArrayAdapter<FunnyFactsItem> {
     }
 
     /**
-     * loadImage - load the ImageView with the image referred by the
-     * FunnyFactsItem
+     * loadImage - load the ImageView with the image referred by the FunnyFactsItem
      * 
      * @param view
      *            - the ImageView to load the image into
@@ -155,44 +157,48 @@ public class FunnyFactsItemAdapter extends ArrayAdapter<FunnyFactsItem> {
             return;
         }
 
-        // create queue of download requests
-        if (m_downloads == null) {
-            m_downloads = new ConcurrentLinkedQueue<Pair<ImageView, FunnyFactsItem>>();
-        }
-
         // add download request to queue
         m_downloads.add(new Pair<ImageView, FunnyFactsItem>(view, item));
+    }
+
+    public void startDownloads() {
+        // create download thread if null
         if (m_downloadThread == null) {
             m_downloadThread = new Thread("Downloader") {
 
                 @Override
                 public void run() {
+                    Log.d(TAG, "Thread " + getName() + " starting");
                     final AndroidHttpClient client = AndroidHttpClient.newInstance("FunnyFactsReader", m_activity);
-                    Pair<ImageView, FunnyFactsItem> entry = null;
+                    Pair<ImageView, FunnyFactsItem> entry;
 
-                    while (true) {
-                        entry = m_downloads.poll();
+                    while (m_enabled) {
+                        entry = m_downloads.peek();
                         if (entry != null) {
+                            final ImageView view = entry.first;
+                            final FunnyFactsItem item = entry.second;
                             try {
-                                final ImageView view = entry.first;
-                                final FunnyFactsItem item = entry.second;
+                                Log.d(TAG, "Downloading image from url: " + item.imageUrl);
 
                                 // create GET request for image Url
                                 m_getRequest = new HttpGet(item.imageUrl);
 
-                                // set connection timeout as default behaviour
-                                // is too slow to respond to errors
+                                // set connection timeout as default behaviour is too slow to respond to errors
                                 HttpParams params = m_getRequest.getParams();
                                 HttpConnectionParams.setConnectionTimeout(params, CONNECTION_TIMEOUT);
 
                                 // perform request
                                 HttpResponse response = client.execute(m_getRequest);
 
+                                // remove request from queue
+                                m_downloads.remove(entry);
+
                                 // check returned status code
                                 final int statusCode = response.getStatusLine().getStatusCode();
                                 if (statusCode != HttpStatus.SC_OK) {
                                     continue;
                                 }
+                                Log.d(TAG, "Download successful");
 
                                 // check returned body
                                 final HttpEntity entity = response.getEntity();
@@ -202,13 +208,12 @@ public class FunnyFactsItemAdapter extends ArrayAdapter<FunnyFactsItem> {
                                         // getting contents from the stream
                                         inputStream = entity.getContent();
 
-                                        // decoding stream data into image
-                                        // Bitmap
+                                        // decoding stream data into image Bitmap
                                         item.image = BitmapFactory.decodeStream(inputStream);
 
-                                        // updating target ImageView ensuring it
-                                        // was not recycled
-                                        if (((FunnyFactsItem) view.getTag()).imageUrl.equals(item.imageUrl)) {
+                                        // updating target ImageView ensuring it was not recycled
+                                        String tagImageUrl = ((FunnyFactsItem) view.getTag()).imageUrl;
+                                        if ((tagImageUrl != null) && tagImageUrl.equals(item.imageUrl)) {
                                             m_activity.runOnUiThread(new Runnable() {
 
                                                 @Override
@@ -226,38 +231,86 @@ public class FunnyFactsItemAdapter extends ArrayAdapter<FunnyFactsItem> {
                                         entity.consumeContent();
                                     }
                                 }
+                            } catch (IllegalArgumentException iae) {
+                                // malformed url then ignore this image removing this request
+                                m_downloads.remove(entry);
+                                Log.d(TAG, "Image Url is faulty: " + iae.toString());
+                            } catch (ConnectTimeoutException cte) {
+                                // assume transient timeout so clear request flag to allow later load request on demand
+                                // and remove the current request
+                                item.imageRequested = false;
+                                m_downloads.remove(entry);
+                                Log.d(TAG, "Failed to download with exception: " + cte.toString());
+                            } catch (UnknownHostException uhe) {
+                                // assume transient failure so clear request flag to allow later load request on demand
+                                // and remove the current request
+                                item.imageRequested = false;
+                                m_downloads.remove(entry);
+                                Log.d(TAG, "Failed to download with exception: " + uhe.toString());
                             } catch (Exception e) {
-                                e.printStackTrace();
-                                m_getRequest.abort();
+                                // if current request has aborted then clear request flag and leave request in queue
+                                // for later reload upon resumption
+                                if (m_getRequest.isAborted()) {
+                                    item.imageRequested = false;
+                                    Log.d(TAG, "Download aborted");
+                                } else {
+                                    // assume this is a permanent exception so ignore this image removing this request
+                                    m_downloads.remove(entry);
+                                    Log.d(TAG, "Failed to download with exception: " + e.toString());
+                                }
                             }
                         }
                     }
-                };
+                    client.close();
+                    Log.d(TAG, "Thread " + getName() + " finished");
+                }
+
+                @Override
+                public synchronized void start() {
+                    // enable downloads
+                    m_enabled = true;
+                    super.start();
+                }
+
+                @Override
+                public void interrupt() {
+                    // disable downloads
+                    m_enabled = false;
+                    // abort current request if any
+                    if (m_getRequest != null) {
+                        m_getRequest.abort();
+                    }
+                    super.interrupt();
+                }
             };
         }
 
-        // execute download thread if not running already
+        // start download thread if not running
         if (!m_downloadThread.isAlive()) {
             m_downloadThread.start();
+            Log.d(TAG, "Start thread " + m_downloadThread.getName());
+        }
+    }
+
+    public void stopDownloads() {
+        // stop download thread if running
+        if (m_downloadThread != null && m_downloadThread.isAlive() && !m_downloadThread.isInterrupted()) {
+            m_downloadThread.interrupt();
+            Log.d(TAG, "Interrupt thread " + m_downloadThread.getName());
+            m_downloadThread = null;
         }
     }
 
     @Override
     public void clear() {
-        // stop download thread if running
-        if (m_downloadThread != null) {
-            m_downloadThread.interrupt();
-        }
-
         // clear any pending downloads
-        if (m_downloads != null) {
-            m_downloads.clear();
-        }
+        m_downloads.clear();
 
         // abort any current download
         if (m_getRequest != null) {
             m_getRequest.abort();
         }
+
         super.clear();
     }
 }
